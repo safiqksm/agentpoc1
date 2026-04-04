@@ -1,0 +1,18 @@
+# Copy to .env — never commit .env
+
+# Entra ID values (used for token validation in Step 4)
+TENANT_ID=<your-entra-tenant-id>
+AGENT_APP_ID=<agentpoc1-agent-app-registration-id>
+
+# CORS — React dev server origin
+ALLOWED_ORIGIN=http://localhost:5173
+
+# MCP Server — set to local MCP server to bypass in-process mock
+# Leave blank to use in-process mock (no MCP server process needed)
+MCP_SERVER_URL=http://localhost:9000
+
+# Azure OpenAI — local dev (replaced by Managed Identity in Azure)
+AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com/
+AZURE_OPENAI_API_KEY=<your-api-key>
+AZURE_OPENAI_DEPLOYMENT=gpt-4o
+AZURE_OPENAI_API_VERSION=2024-08-01-preview

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Signing in...</title>
+</head>
+<body>
+  <!--
+    MSAL popup redirect page.
+
+    How popup login works:
+      1. Main app opens a popup window pointing to Entra ID login.
+      2. User logs in — Entra redirects the POPUP to this page with #code=... in the URL.
+      3. This page loads MSAL, calls handleRedirectPromise() which reads the #code,
+         sends the result back to the main window via postMessage, then closes the popup.
+      4. Main app receives the token — useIsAuthenticated() updates — UI re-renders.
+
+    This page must be registered as a redirect URI in the Entra App Registration
+    (Single-page application platform): http://localhost:5173/redirect.html
+  -->
+  <script src="https://alcdn.msauth.net/browser/3.28.1/js/msal-browser.min.js"></script>
+  <script>
+    // Initialise MSAL with the same clientId/authority as the main app.
+    // Values are embedded by Vite at build time via index.html meta tags — but
+    // since this is a plain HTML file we read them from sessionStorage where
+    // the main app writes them, OR fall back to the env vars via a small trick.
+    //
+    // Simplest approach: MSAL reads the hash automatically on initialize().
+    // We just need a valid PublicClientApplication instance.
+    (async function () {
+      // Read config written to sessionStorage by the main app before opening popup
+      const cfg = JSON.parse(sessionStorage.getItem('msal_popup_config') || '{}');
+
+      if (!cfg.clientId) {
+        // Nothing to do — not a MSAL redirect
+        return;
+      }
+
+      const msalInstance = new msal.PublicClientApplication({
+        auth: {
+          clientId:    cfg.clientId,
+          authority:   cfg.authority,
+          redirectUri: window.location.href.split('?')[0].split('#')[0], // this page
+        },
+      });
+
+      await msalInstance.initialize();
+
+      // Processes the #code= in the URL, sends result back to opener, closes popup
+      await msalInstance.handleRedirectPromise();
+    })();
+  </script>
+</body>
+</html>

@@ -180,6 +180,9 @@ fetch('http://localhost:8000/debug/token', {
 | File | Purpose |
 |---|---|
 | `ENTRA_OBO_SETUP.md` | Entra App Registration setup for OBO flow |
+| `ENTRA_OBO_FOR_AI_SETUP.md` | Entra setup for OBO for AI (Azure OpenAI user impersonation) |
 | `OKTA_SETUP.md` | Okta service app + private_key_jwt key setup |
 | `REQUEST_FLOW.md` | ASCII request/response flow diagrams |
-| `step-01-plan.md` … `step-08-plan.md` | Per-step implementation plans |
+| `plans/step-01-plan.md` … `plans/step-13-plan.md` | Per-step implementation plans |
+| `plans/step-obo-for-ai-plan.md` | OBO for AI implementation plan |
+| `steps/steps.md` | Step-by-step task list |

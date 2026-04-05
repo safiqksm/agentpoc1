@@ -26,7 +26,8 @@ tokens scoped to Azure Cognitive Services on behalf of the signed-in user.
 
 6. In the "Request API permissions" panel, click **APIs my organization uses** tab
 
-7. In the search box type **Azure Cognitive Services** and click the result
+7. In the search box type **Microsoft Cognitive Services** and click the result
+   (App ID in this tenant: `7d312290-28c8-473c-a0ed-8e53749b6d6d`)
 
 8. Select **Delegated permissions**
 

@@ -43,7 +43,7 @@ def _log_token_claims(label: str, token: str) -> None:
             token, "", options={"verify_signature": False, "verify_aud": False, "verify_exp": False}
         )
         logger.info(
-            "%s — aud=%s  scp=%s  sub=%s  exp=%s",
+            "\n--- %s ---\n  aud : %s\n  scp : %s\n  sub : %s\n  exp : %s\n---",
             label,
             claims.get("aud", "?"),
             claims.get("scp", "?"),
@@ -51,7 +51,7 @@ def _log_token_claims(label: str, token: str) -> None:
             claims.get("exp", "?"),
         )
     except Exception:
-        logger.info("%s — (not a JWT or could not decode)", label)
+        logger.info("--- %s --- (not a JWT or could not decode)", label)
 
 # Entra ID token endpoint (v2.0)
 _TOKEN_ENDPOINT = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
@@ -103,9 +103,9 @@ async def exchange_obo_token(user_token: str) -> str:
         "requested_token_use":  "on_behalf_of",
     }
 
-    # Log incoming user token claims before exchange
-    _log_token_claims("STEP 4 — User token (incoming)", user_token)
-    logger.info("STEP 4 — Exchanging user token for OBO token (scope: %s)", scope)
+    logger.info("\n========== OBO: USER → MCP SERVER ==========")
+    _log_token_claims("User token (incoming)", user_token)
+    logger.info("  scope : %s", scope)
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(
@@ -119,6 +119,60 @@ async def exchange_obo_token(user_token: str) -> str:
         raise RuntimeError(f"STEP 4 — OBO exchange failed ({response.status_code}): {error}")
 
     obo_token = response.json()["access_token"]
-    # Log OBO token claims after exchange to confirm audience and scope changed
-    _log_token_claims("STEP 4 — OBO token (after exchange)", obo_token)
+    _log_token_claims("OBO token (MCP Server)", obo_token)
+    logger.info("========== OBO: USER → MCP SERVER — DONE ==========\n")
     return obo_token
+
+
+async def exchange_obo_token_for_llm(user_token: str) -> str | None:
+    """
+    OBO for AI — Exchange the user's Bearer token for a token scoped to
+    Azure Cognitive Services (Azure OpenAI).
+
+    Returns the OBO access token string on success.
+    Returns None if OBO env vars are not configured — caller falls back to API key.
+
+    Raises RuntimeError if the exchange call fails with an error response.
+    """
+    tenant_id     = os.getenv("TENANT_ID")
+    client_id     = os.getenv("AGENT_CLIENT_ID")
+    client_secret = os.getenv("AGENT_CLIENT_SECRET")
+
+    if not all([tenant_id, client_id, client_secret]):
+        logger.warning(
+            "OBO for AI — not configured (missing env vars). "
+            "LLM will fall back to API key auth."
+        )
+        return None
+
+    scope = "https://cognitiveservices.azure.com/.default"
+    token_url = _TOKEN_ENDPOINT.format(tenant=tenant_id)
+
+    body = {
+        "grant_type":           _OBO_GRANT_TYPE,
+        "client_id":            client_id,
+        "client_secret":        client_secret,
+        "assertion":            user_token,
+        "scope":                scope,
+        "requested_token_use":  "on_behalf_of",
+    }
+
+    logger.info("\n========== OBO FOR AI: USER → AZURE OPENAI ==========")
+    _log_token_claims("User token (incoming)", user_token)
+    logger.info("  scope : %s", scope)
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            token_url,
+            data=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+    if response.status_code != 200:
+        error = response.json() if response.headers.get("content-type", "").startswith("application/json") else response.text
+        raise RuntimeError(f"OBO for AI — exchange failed ({response.status_code}): {error}")
+
+    llm_token = response.json()["access_token"]
+    _log_token_claims("LLM token (Azure OpenAI)", llm_token)
+    logger.info("========== OBO FOR AI: USER → AZURE OPENAI — DONE ==========\n")
+    return llm_token

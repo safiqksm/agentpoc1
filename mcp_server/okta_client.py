@@ -50,6 +50,7 @@ _OKTA_SCOPES = " ".join([
 _cached_token: str | None = None
 _token_expires_at: float = 0.0          # monotonic clock seconds
 _TOKEN_EXPIRY_BUFFER = 60               # refresh 60 s before actual expiry
+_last_token_info: dict = {}             # debug: last acquired token's key fields
 
 
 def _token_endpoint(okta_domain: str) -> str:
@@ -146,8 +147,23 @@ async def get_okta_token() -> str:
     expires_in       = data.get("expires_in", 3600)
     _token_expires_at = time.monotonic() + expires_in - _TOKEN_EXPIRY_BUFFER
 
+    _last_token_info.update({
+        "sub":    client_id,
+        "scope":  data.get("scope", _OKTA_SCOPES),
+        "aud":    _token_endpoint(okta_domain),
+        "cached": False,
+        "expires_in": expires_in,
+    })
+
     logger.info("STEP 8 — Okta token acquired (expires_in=%ds)", expires_in)
     return _cached_token
+
+
+def get_last_token_info() -> dict:
+    """Return key fields of the last acquired Okta token (debug only)."""
+    if not _last_token_info:
+        return {"status": "not yet acquired (no tool call made yet)"}
+    return _last_token_info
 
 
 def is_configured() -> bool:

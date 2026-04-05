@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from token_verifier import verify_token
 from okta_tools import dispatch
+from okta_client import get_last_token_info
 
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
@@ -98,6 +99,12 @@ async def mcp_call(request: Request, body: ToolCallRequest):
     _log_tool_call(body.tool, body.arguments, subject, result=result)
     logger.info("MCP call complete: tool=%s  subject=%s", body.tool, subject)
     return {"tool": body.tool, "result": result}
+
+
+@app.get("/debug/okta-token")
+async def debug_okta_token():
+    """Debug — returns last acquired Okta token info. Remove before production."""
+    return get_last_token_info()
 
 
 @app.get("/health")

@@ -9,8 +9,11 @@
 
 import os
 import json
+import logging
 from openai import AzureOpenAI
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
+logger = logging.getLogger(__name__)
 
 # STEP 13 — System prompt in its own role, never mixed with user input
 SYSTEM_PROMPT = (
@@ -72,15 +75,27 @@ def call_llm(prompt: str) -> str:
 # STEP 13 — LLM call with tool definitions (function calling).
 # Called by the orchestrator (Step 3) each round of the ReAct loop.
 # Returns either a plain text answer or a tool_call decision.
-async def call_llm_with_tools(messages: list, tools: list) -> dict:
+async def call_llm_with_tools(messages: list, tools: list, user_token: str | None = None) -> dict:
     """
     Call the LLM with tool definitions.
     Returns one of:
       { "type": "text",      "content": str,  "model": str }
       { "type": "tool_call", "tool_call": { "id", "name", "arguments" }, "model": str }
     """
-    client = _build_client()
-    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+    endpoint   = os.getenv("AZURE_OPENAI_ENDPOINT")
+    api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview")
+    deployment  = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+
+    if user_token:
+        logger.info("\n========== LLM CALL ==========\n  auth : OBO for AI (user identity → Azure OpenAI)\n  model: %s\n==============================\n", deployment)
+        client = AzureOpenAI(
+            azure_endpoint=endpoint,
+            azure_ad_token_provider=lambda: user_token,
+            api_version=api_version,
+        )
+    else:
+        logger.info("\n========== LLM CALL ==========\n  auth : API key / Managed Identity (OBO for AI not active)\n  model: %s\n==============================\n", deployment)
+        client = _build_client()
 
     response = client.chat.completions.create(
         model=deployment,

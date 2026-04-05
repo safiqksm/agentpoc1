@@ -54,7 +54,7 @@ Azure portal
   └─────────────────────────────────────────────────────────────────────────┘
           │
           │  1. User types: "List all users in Okta"
-          │     MSAL acquireTokenSilent()
+          │     MSAL acquireTokenSilent()                agentService.sendPrompt()
           │     scope: api://6b114879.../agent.access
           │
           ▼
@@ -76,17 +76,19 @@ Azure portal
   ┌─────────────────────────────────────────────────────────────────────────┐
   │  Agent  (FastAPI — http://localhost:8000)                               │
   │                                                                         │
-  │  main.py         — extracts Bearer token                                │
-  │  orchestrator.py — starts OBO exchanges                                 │
+  │  chat()              main.py         — extracts Bearer token            │
+  │  run()               orchestrator.py — starts OBO exchanges             │
   └─────────────────────────────────────────────────────────────────────────┘
           │
           │  3a. OBO Exchange #1 — token for MCP Server
+          │      exchange_obo_token()          obo.py
           │      POST https://login.microsoftonline.com/{tid}/oauth2/v2.0/token
           │      grant_type  : urn:ietf:params:oauth:grant-type:jwt-bearer
           │      assertion   : <ACCESS TOKEN #1>
           │      scope       : api://b600aeb4.../mcp.call
           │
           │  3b. OBO Exchange #2 — token for Azure OpenAI  ← NEW
+          │      exchange_obo_token_for_llm()  obo.py
           │      POST https://login.microsoftonline.com/{tid}/oauth2/v2.0/token
           │      grant_type  : urn:ietf:params:oauth:grant-type:jwt-bearer
           │      assertion   : <ACCESS TOKEN #1>
@@ -108,6 +110,7 @@ Azure portal
   └─────────────────────────────────────────────────────────────────────────┘
           │
           │  4. Agent calls Azure OpenAI with ACCESS TOKEN #3
+          │     call_llm_with_tools()           llm.py
           │     POST https://foundry3000a.cognitiveservices.azure.com/
           │          openai/deployments/gpt-4.1/chat/completions
           │     Authorization: Bearer <ACCESS TOKEN #3>
@@ -136,6 +139,7 @@ Azure portal
   └─────────────────────────────────────────────────────────────────────────┘
           │
           │  5. POST http://localhost:9000/mcp/call
+          │     call_tool()                     mcp_client.py
           │     Authorization: Bearer <ACCESS TOKEN #2>
           │     Body: {
           │       "tool"      : "list_users",
@@ -146,7 +150,8 @@ Azure portal
   ┌─────────────────────────────────────────────────────────────────────────┐
   │  MCP Server  (FastAPI — http://localhost:9000)                          │
   │                                                                         │
-  │  token_verifier.py                                                      │
+  │  mcp_call()          main.py                                            │
+  │  verify_token()      token_verifier.py                                  │
   │    ✓ Fetch JWKS from Entra (cached 1h)                                  │
   │    ✓ RS256 signature verified                                           │
   │    ✓ aud  == api://b600aeb4...                                          │
@@ -154,10 +159,12 @@ Azure portal
   │    ✓ exp  not expired                                                   │
   │    ✓ iss  == sts.windows.net/b66066d2... (v1.0 accepted)                │
   │                                                                         │
-  │  okta_tools.dispatch("list_users", { "limit": 25 })                    │
+  │  dispatch()          okta_tools.py                                      │
+  │  list_users()        okta_tools.py                                      │
   └─────────────────────────────────────────────────────────────────────────┘
           │
           │  6. Acquire Okta service token (cached 1h)
+          │     get_okta_token()                okta_client.py
           │     POST https://oie-8764513.oktapreview.com/oauth2/v1/token
           │     grant_type            : client_credentials
           │     client_assertion_type : urn:ietf:...:jwt-bearer
@@ -175,6 +182,7 @@ Azure portal
   └─────────────────────────────────────────────────────────────────────────┘
           │
           │  7. GET https://oie-8764513.oktapreview.com/api/v1/users?limit=25
+          │     _okta_get()                     okta_tools.py
           │     Authorization: Bearer <OKTA ACCESS TOKEN>
           │     Accept: application/json
           │
@@ -198,10 +206,12 @@ Azure portal
   └─────────────────────────────────────────────────────────────────────────┘
           │
           │  8. MCP Server returns to Agent:
+          │     _log_tool_call()                main.py
           │     { "tool": "list_users", "result": [ ... ] }
           │     (also appended to tool_call_debug.txt)
           │
           │  9. Agent feeds tool result back to Azure OpenAI (round 2):
+          │     run()                           orchestrator.py
           │     messages += [
           │       { "role": "assistant", "tool_calls": [...] },
           │       { "role": "tool",      "content": "[{...}]" }
@@ -211,6 +221,7 @@ Azure portal
           │      "Here are the active users in your Okta tenant: ..."
           │
           │  11. Agent returns to SPA:
+          │      chat()                         main.py
           │      {
           │        "reply"       : "Here are the active users...",
           │        "model"       : "gpt-4.1",

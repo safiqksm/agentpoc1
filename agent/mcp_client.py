@@ -67,7 +67,7 @@ async def call_tool(tool_name: str, args: dict, token: str) -> dict:
         logger.warning("MCP_SERVER_URL not set — using in-process mock for: %s", tool_name)
         return _mock_response(tool_name, args)
 
-    logger.info("MCP call → %s/mcp/call  tool=%s", mcp_url, tool_name)
+    logger.info("MCP Server — initiating connection to %s/mcp/call  tool=%s  args=%s", mcp_url, tool_name, args)
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:

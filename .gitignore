@@ -13,8 +13,9 @@ venv/
 # Okta keys — never commit
 *.pem
 
-# Debug token dump — contains live JWTs
+# Debug dumps — contain live JWTs and API responses
 token_debug.txt
+tool_call_debug.txt
 
 # Node
 node_modules/

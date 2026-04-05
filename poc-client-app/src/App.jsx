@@ -8,12 +8,11 @@ function AuthApp() {
   const isAuthenticated = useIsAuthenticated()
   const account = accounts[0] ?? null
 
-  // Use redirect flow — simpler and more reliable than popup
   function login()  { instance.loginRedirect(loginRequest) }
   function logout() { instance.logoutRedirect() }
 
   return (
-    <div style={{ fontFamily: 'sans-serif' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100svh', background: 'var(--az-bg)' }}>
       <Header
         isAuthenticated={isAuthenticated}
         name={account?.name ?? account?.username}
@@ -25,10 +24,10 @@ function AuthApp() {
   )
 }
 
-// ── Unauthenticated shell — no MsalProvider (local dev, no .env) ──────────
+// ── Unauthenticated shell ─────────────────────────────────────────────────
 function LocalApp() {
   return (
-    <div style={{ fontFamily: 'sans-serif' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100svh', background: 'var(--az-bg)' }}>
       <Header isAuthenticated={false} />
       <ChatPage account={null} instance={null} />
     </div>
@@ -39,39 +38,94 @@ function LocalApp() {
 function Header({ isAuthenticated, name, onLogin, onLogout }) {
   return (
     <header style={{
-      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      padding: '12px 24px', borderBottom: '1px solid #e0e0e0', background: '#fff',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: '0 24px',
+      height: 48,
+      background: 'var(--az-header-bg)',
+      color: '#fff',
+      boxShadow: '0 2px 4px rgba(0,0,0,.3)',
+      flexShrink: 0,
     }}>
-      <span style={{ fontWeight: 700, fontSize: 16 }}>AgentPOC1</span>
+      {/* Left — Azure logo + app name */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <AzureIcon />
+        <span style={{ fontWeight: 600, fontSize: 15, color: '#fff', letterSpacing: '0.2px' }}>
+          AgentPOC1
+        </span>
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginLeft: 4 }}>
+          | Okta Agent
+        </span>
+      </div>
 
+      {/* Right — auth controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {isAuthenticated ? (
           <>
-            {/* Welcome message — displayed after successful Entra login */}
-            <span style={{ fontSize: 14, color: '#333' }}>
-              Welcome, <strong>{name}</strong>
+            <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>
+              {name}
             </span>
-            <span style={{ fontSize: 11, color: '#2e7d32', background: '#e8f5e9', padding: '2px 8px', borderRadius: 10 }}>
-              Authenticated
-            </span>
-            <button onClick={onLogout} style={{ padding: '6px 14px', cursor: 'pointer' }}>
-              Sign out
-            </button>
+            <Badge color="#2ecc71" bg="rgba(46,204,113,0.2)">Signed in</Badge>
+            <HeaderButton onClick={onLogout}>Sign out</HeaderButton>
           </>
         ) : (
           <>
-            <span style={{ fontSize: 11, color: '#b45309', background: '#fef3c7', padding: '2px 8px', borderRadius: 10 }}>
-              {isAuthConfigured ? 'Not signed in' : 'Local dev mode'}
-            </span>
+            <Badge color="#ffd700" bg="rgba(255,215,0,0.15)">
+              {isAuthConfigured ? 'Not signed in' : 'Local dev'}
+            </Badge>
             {isAuthConfigured && (
-              <button onClick={onLogin} style={{ padding: '6px 14px', cursor: 'pointer' }}>
-                Sign in with Microsoft
-              </button>
+              <HeaderButton onClick={onLogin}>Sign in with Microsoft</HeaderButton>
             )}
           </>
         )}
       </div>
     </header>
+  )
+}
+
+function Badge({ color, bg, children }) {
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 600,
+      color, background: bg,
+      padding: '2px 8px', borderRadius: 10,
+      border: `1px solid ${color}40`,
+    }}>
+      {children}
+    </span>
+  )
+}
+
+function HeaderButton({ onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '5px 14px',
+        fontSize: 13,
+        cursor: 'pointer',
+        background: 'rgba(255,255,255,0.12)',
+        color: '#fff',
+        border: '1px solid rgba(255,255,255,0.3)',
+        borderRadius: 3,
+        transition: 'background 0.15s',
+      }}
+      onMouseEnter={e => e.target.style.background = 'rgba(255,255,255,0.22)'}
+      onMouseLeave={e => e.target.style.background = 'rgba(255,255,255,0.12)'}
+    >
+      {children}
+    </button>
+  )
+}
+
+function AzureIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M33.338 7.166L11.94 60.735l21.122 2.75L53.957 21.4 33.338 7.166z" fill="#0089d6"/>
+      <path d="M36.666 64.064l38.056 6.602L96 88.835H18.21l18.456-24.77z" fill="#0089d6"/>
+      <path d="M53.957 21.4L33.338 63.485l3.328.579L62.39 29.8 53.957 21.4z" fill="#0060aa"/>
+    </svg>
   )
 }
 

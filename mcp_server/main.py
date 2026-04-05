@@ -15,7 +15,10 @@
 # =============================================================================
 
 import os
+import json
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -23,10 +26,26 @@ from dotenv import load_dotenv
 from token_verifier import verify_token
 from okta_tools import dispatch
 
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+_DEBUG_FILE = Path(__file__).parent / "tool_call_debug.txt"
+
+
+def _log_tool_call(tool: str, args: dict, subject: str, result=None, error: str | None = None) -> None:
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    entry = {
+        "timestamp": ts,
+        "tool":      tool,
+        "subject":   subject,
+        "request":   args,
+        "response":  result,
+        "error":     error,
+    }
+    with _DEBUG_FILE.open("a") as f:
+        f.write(json.dumps(entry, indent=2) + "\n" + ("-" * 60) + "\n")
 
 app = FastAPI(title="MCP Server — Okta")
 
@@ -64,14 +83,20 @@ async def mcp_call(request: Request, body: ToolCallRequest):
     # Step 1 — extract token forwarded from the Agent
     token = extract_bearer_token(request)
 
-    # Step 2 — verify token (signature + claims).
-    # verify_token() currently checks presence only; full JWT validation added in Step 4.
+    # Step 2 — verify token (signature + claims)
     token_claims = verify_token(token)
-    logger.info("MCP call: tool=%s  subject=%s", body.tool, token_claims.get("sub", "unknown"))
+    subject = token_claims.get("sub", "unknown")
+    logger.info("MCP call received: tool=%s  subject=%s  args=%s", body.tool, subject, body.arguments)
 
     # Step 3 — dispatch to the correct Okta tool handler
-    result = await dispatch(body.tool, body.arguments)
+    try:
+        result = await dispatch(body.tool, body.arguments)
+    except Exception as exc:
+        _log_tool_call(body.tool, body.arguments, subject, error=str(exc))
+        raise
 
+    _log_tool_call(body.tool, body.arguments, subject, result=result)
+    logger.info("MCP call complete: tool=%s  subject=%s", body.tool, subject)
     return {"tool": body.tool, "result": result}
 
 

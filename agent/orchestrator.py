@@ -10,9 +10,13 @@
 
 import json
 import logging
+from pathlib import Path
 from llm import call_llm_with_tools           # STEP 13 — LLM call
 from mcp_client import call_tool              # STEPS 5–12 — MCP/Okta tool call
 from tools import TOOLS, DESTRUCTIVE_TOOLS   # STEP 3 — tool catalogue
+from obo import exchange_obo_token            # STEP 4 — OBO token exchange
+
+_TOKEN_LOG = Path(__file__).parent / "token_debug.txt"
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +46,26 @@ async def run(prompt: str, token: str) -> dict:
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
+
+    # DEBUG — write user token before OBO so it's always captured
+    _TOKEN_LOG.write_text(f"=== USER TOKEN (incoming) ===\n{token}\n\nOBO: pending...\n")
+
+    # STEP 4 — Exchange the user token for an OBO token scoped to the MCP Server.
+    # Falls back to the original token if OBO env vars are not configured (local dev).
+    try:
+        mcp_token = await exchange_obo_token(token)
+        _TOKEN_LOG.write_text(
+            f"=== USER TOKEN (incoming) ===\n{token}\n\n"
+            f"=== OBO TOKEN (after exchange) ===\n{mcp_token}\n\n"
+            f"=== SAME? ===\n{token == mcp_token}\n"
+        )
+    except RuntimeError as e:
+        _TOKEN_LOG.write_text(
+            f"=== USER TOKEN (incoming) ===\n{token}\n\n"
+            f"=== OBO ERROR ===\n{e}\n"
+        )
+        raise
+    logger.info("Tokens written to %s", _TOKEN_LOG)
 
     tools_called = []
 
@@ -78,9 +102,9 @@ async def run(prompt: str, token: str) -> dict:
                 }
 
         # STEPS 5–12 — Execute the tool via the MCP client.
-        # Currently uses mock data (Step 3); real APIM/MCP call wired in Step 5.
-        # Step 4 will swap `token` here for an OBO token scoped to APIM.
-        tool_result = await call_tool(tool_name, tool_args, token)
+        # STEP 4 — mcp_token is the OBO token (or original token in local dev mode).
+        # The MCP Server validates this token before executing the Okta operation.
+        tool_result = await call_tool(tool_name, tool_args, mcp_token)
         tools_called.append({"tool": tool_name, "args": tool_args, "result": tool_result})
 
         # STEP 3 — Append tool call + result to history so LLM sees them next round

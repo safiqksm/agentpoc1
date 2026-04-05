@@ -6,14 +6,24 @@
 # =============================================================================
 
 import os
+import logging
+from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
 from dotenv import load_dotenv
 from llm import call_llm
 from orchestrator import run as agent_run
+from obo import exchange_obo_token
+from jose import jwt as jose_jwt
 
-load_dotenv()
+# Always load .env from the same directory as this file, regardless of CWD
+_env_path = Path(__file__).parent / ".env"
+load_dotenv(dotenv_path=_env_path)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.info("Agent starting — MCP_SERVER_URL=%s", os.getenv("MCP_SERVER_URL") or "(not set)")
 
 app = FastAPI(title="AgentPOC1")
 
@@ -102,6 +112,48 @@ async def chat_echo(request: Request, body: ChatRequest):
         reply=f"Echo: {body.prompt}",
         token_preview=token_preview,
     )
+
+
+# DEBUG — Token trace endpoint: shows user token claims + OBO token claims
+# Remove this endpoint before production deployment
+@app.get("/debug/token")
+async def debug_token(request: Request):
+    token = extract_bearer_token(request)
+
+    def decode_claims(t):
+        try:
+            return jose_jwt.decode(t, "", options={"verify_signature": False, "verify_aud": False, "verify_exp": False})
+        except Exception as e:
+            return {"error": str(e), "raw": t[:40]}
+
+    user_claims = decode_claims(token)
+
+    try:
+        obo_token = await exchange_obo_token(token)
+        obo_claims = decode_claims(obo_token)
+        obo_error = None
+    except RuntimeError as e:
+        obo_token = None
+        obo_claims = None
+        obo_error = str(e)
+
+    return {
+        "user_token": {
+            "aud": user_claims.get("aud"),
+            "scp": user_claims.get("scp"),
+            "sub": user_claims.get("sub"),
+            "iss": user_claims.get("iss"),
+            "exp": user_claims.get("exp"),
+        },
+        "obo_token": {
+            "aud": obo_claims.get("aud") if obo_claims else None,
+            "scp": obo_claims.get("scp") if obo_claims else None,
+            "sub": obo_claims.get("sub") if obo_claims else None,
+            "iss": obo_claims.get("iss") if obo_claims else None,
+            "exp": obo_claims.get("exp") if obo_claims else None,
+        } if obo_claims else None,
+        "obo_error": obo_error,
+    }
 
 
 # STEP 2 — Health check for ACA liveness/readiness probes

@@ -1,8 +1,11 @@
 # Copy to .env — never commit .env
 
-# Entra ID — used for full JWT validation (Step 4)
+# Entra ID — used for full OBO token validation (Step 5)
 TENANT_ID=<your-entra-tenant-id>
-AGENT_APP_ID=<agentpoc1-agent-app-registration-id>
+MCP_APP_ID=<agentpoc1-mcp application client ID>
+
+# Legacy — no longer used after Step 5 (kept for reference)
+# AGENT_APP_ID=<agentpoc1-agent-app-registration-id>
 
 # Okta — used for real API calls (Step 11)
 OKTA_DOMAIN=https://<your-okta-domain>.okta.com

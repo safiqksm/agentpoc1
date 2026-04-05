@@ -15,7 +15,11 @@
 
 import os
 import logging
+from pathlib import Path
 import httpx
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +57,9 @@ async def call_tool(tool_name: str, args: dict, token: str) -> dict:
     POST /mcp/call to the MCP Server with the Bearer token.
     The MCP Server is responsible for verifying the token.
 
-    Falls back to in-process mock if MCP_SERVER_URL is not set or call fails.
+    Uses in-process mock only if MCP_SERVER_URL is not set.
+    If MCP_SERVER_URL is set, errors are raised (not silently swallowed)
+    so auth/connectivity failures are visible in caller logs.
     """
     mcp_url = os.getenv("MCP_SERVER_URL")
 
@@ -61,19 +67,34 @@ async def call_tool(tool_name: str, args: dict, token: str) -> dict:
         logger.warning("MCP_SERVER_URL not set — using in-process mock for: %s", tool_name)
         return _mock_response(tool_name, args)
 
+    logger.info("MCP call → %s/mcp/call  tool=%s", mcp_url, tool_name)
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
                 f"{mcp_url}/mcp/call",
                 json={"tool": tool_name, "arguments": args},
                 headers={
-                    # Token forwarded directly — MCP Server verifies it
                     "Authorization": f"Bearer {token}",
                     "Content-Type": "application/json",
                 },
             )
-            response.raise_for_status()
-            return response.json()
+    except httpx.ConnectError as e:
+        raise RuntimeError(
+            f"Cannot reach MCP Server at {mcp_url} — is it running? ({e})"
+        )
     except Exception as e:
-        logger.warning("MCP Server call failed (%s) — falling back to mock: %s", tool_name, e)
-        return _mock_response(tool_name, args)
+        raise RuntimeError(f"MCP Server request failed for tool '{tool_name}': {e}")
+
+    if not response.is_success:
+        logger.error(
+            "MCP Server returned HTTP %d for tool '%s': %s",
+            response.status_code, tool_name, response.text,
+        )
+        raise RuntimeError(
+            f"MCP Server rejected '{tool_name}' with HTTP {response.status_code}: {response.text}"
+        )
+
+    result = response.json()
+    logger.info("MCP call ← tool=%s  status=ok", tool_name)
+    return result

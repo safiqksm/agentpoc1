@@ -1,0 +1,66 @@
+:root {
+  /* Azure / Fluent UI palette */
+  --az-blue:           #0078d4;
+  --az-blue-dark:      #106ebe;
+  --az-blue-light:     #eff6fc;
+  --az-blue-mid:       #cce4f7;
+  --az-bg:             #f3f2f1;
+  --az-surface:        #ffffff;
+  --az-text:           #323130;
+  --az-text-secondary: #605e5c;
+  --az-border:         #edebe9;
+  --az-border-mid:     #d2d0ce;
+  --az-success:        #107c10;
+  --az-success-bg:     #dff6dd;
+  --az-error:          #a4262c;
+  --az-error-bg:       #fde7e9;
+  --az-warning:        #d83b01;
+  --az-warning-bg:     #fff4ce;
+  --az-header-bg:      #1b3a5c;
+  --az-shadow:         0 2px 8px rgba(0,0,0,.12), 0 0 2px rgba(0,0,0,.08);
+
+  --sans: 'Segoe UI', system-ui, Roboto, sans-serif;
+  --mono: 'Cascadia Code', 'Consolas', ui-monospace, monospace;
+
+  font: 14px/150% var(--sans);
+  color: var(--az-text);
+  background: var(--az-bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  width: 100%;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+h1, h2, h3 {
+  font-family: var(--sans);
+  font-weight: 600;
+  color: var(--az-text);
+  margin: 0 0 8px;
+}
+
+h1 { font-size: 24px; }
+h2 { font-size: 18px; }
+h3 { font-size: 14px; }
+
+p { margin: 0; }
+
+code {
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 2px 6px;
+  background: var(--az-blue-light);
+  border-radius: 3px;
+  color: var(--az-blue-dark);
+}

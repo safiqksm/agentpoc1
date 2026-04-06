@@ -129,8 +129,64 @@ TOOLS = [
             },
         },
     },
+    # ── HR Resource Server tools (accessed via XAA token, not MCP/OBO) ────────
+    {
+        "type": "function",
+        "function": {
+            "name": "get_employee_profile",
+            "description": (
+                "Get the HR employee profile (department, job title, manager, location) "
+                "for an Okta user. Use after looking up the user's Okta ID."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "okta_user_id": {
+                        "type": "string",
+                        "description": "The Okta user ID (e.g. 00u1abc)",
+                    }
+                },
+                "required": ["okta_user_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_departments",
+            "description": "List all company departments with their employee counts.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_org_chart",
+            "description": (
+                "Get the direct reports for a manager, identified by their Okta user ID. "
+                "Returns the manager's HR profile and a list of their direct reports."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "okta_user_id": {
+                        "type": "string",
+                        "description": "The Okta user ID of the manager",
+                    }
+                },
+                "required": ["okta_user_id"],
+            },
+        },
+    },
 ]
 
 # STEP 3 — OWASP LLM06/AA03: tools that require explicit destructive intent
 # in the user's prompt before the orchestrator will allow them to execute.
 DESTRUCTIVE_TOOLS = {"deactivate_user", "reset_mfa"}
+
+# Tools that route to the HR Resource Server via XAA token (not to MCP via OBO).
+RESOURCE_SERVER_TOOLS = {"get_employee_profile", "list_departments", "get_org_chart"}

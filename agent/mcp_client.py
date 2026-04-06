@@ -67,6 +67,13 @@ async def call_tool(tool_name: str, args: dict, token: str) -> dict:
         logger.warning("MCP_SERVER_URL not set — using in-process mock for: %s", tool_name)
         return _mock_response(tool_name, args)
 
+    # XAA path: orchestrator sets token="local-dev" because there is no Entra OBO
+    # token available. Sending "local-dev" to the real MCP server would fail JWT
+    # validation. Fall back to mock so the real MCP server is not affected.
+    if token == "local-dev":
+        logger.info("XAA path — using in-process mock for Okta tool (no Entra token): %s", tool_name)
+        return _mock_response(tool_name, args)
+
     logger.info("MCP Server — initiating connection to %s/mcp/call  tool=%s  args=%s", mcp_url, tool_name, args)
 
     try:

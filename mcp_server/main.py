@@ -18,6 +18,7 @@ import os
 import json
 import logging
 from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,8 +29,13 @@ from okta_tools import dispatch
 from okta_client import get_last_token_info
 
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
-
-logging.basicConfig(level=logging.INFO)
+_LOG_FILE = Path(__file__).parent / "mcp_server.log"
+_fmt = logging.Formatter("%(asctime)s  %(levelname)s  %(name)s  %(message)s")
+_file_handler = RotatingFileHandler(_LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=3)
+_file_handler.setFormatter(_fmt)
+_console_handler = logging.StreamHandler()
+_console_handler.setFormatter(_fmt)
+logging.basicConfig(level=logging.INFO, handlers=[_console_handler, _file_handler])
 logger = logging.getLogger(__name__)
 
 _DEBUG_FILE = Path(__file__).parent / "tool_call_debug.txt"

@@ -7,6 +7,7 @@
 
 import os
 import logging
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +22,13 @@ from jose import jwt as jose_jwt
 _env_path = Path(__file__).parent / ".env"
 load_dotenv(dotenv_path=_env_path)
 
-logging.basicConfig(level=logging.INFO)
+_LOG_FILE = Path(__file__).parent / "agent.log"
+_fmt = logging.Formatter("%(asctime)s  %(levelname)s  %(name)s  %(message)s")
+_file_handler = RotatingFileHandler(_LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=3)
+_file_handler.setFormatter(_fmt)
+_console_handler = logging.StreamHandler()
+_console_handler.setFormatter(_fmt)
+logging.basicConfig(level=logging.INFO, handlers=[_console_handler, _file_handler])
 logger = logging.getLogger(__name__)
 logger.info("Agent starting — MCP_SERVER_URL=%s", os.getenv("MCP_SERVER_URL") or "(not set)")
 
@@ -30,9 +37,9 @@ app = FastAPI(title="AgentPOC1")
 # STEP 2 — CORS restricted to the known SPA origin (React dev server)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("ALLOWED_ORIGIN", "http://localhost:5173")],
+    allow_origins=os.getenv("ALLOWED_ORIGIN", "http://localhost:5173").split(","),
     allow_methods=["POST", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Auth-Provider"],
 )
 
 # STEP 2 — Input length cap (OWASP LLM01: Prompt Injection mitigation)
@@ -82,12 +89,12 @@ def extract_bearer_token(request: Request) -> str:
 async def chat(request: Request, body: ChatRequest):
     # STEP 2 — validate token presence
     token = extract_bearer_token(request)
-    # STEP 4 (TODO) — OBO token exchange happens here before passing token downstream
+    auth_provider = request.headers.get("X-Auth-Provider", "entra")
     token_preview = token[:20] + "..." if len(token) > 20 else token
 
     try:
         # STEP 3 — hand off to orchestrator (ReAct loop)
-        result = await agent_run(body.prompt, token)
+        result = await agent_run(body.prompt, token, auth_provider)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:

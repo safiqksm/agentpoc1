@@ -14,7 +14,7 @@ from pydantic import BaseModel, field_validator
 from dotenv import load_dotenv
 from llm import call_llm
 from orchestrator import run as agent_run
-from obo import exchange_obo_token
+from obo import exchange_obo_token, exchange_obo_token_for_llm
 from jose import jwt as jose_jwt
 
 # Always load .env from the same directory as this file, regardless of CWD
@@ -153,6 +153,46 @@ async def debug_token(request: Request):
             "exp": obo_claims.get("exp") if obo_claims else None,
         } if obo_claims else None,
         "obo_error": obo_error,
+    }
+
+
+# DEBUG — LLM token trace: shows user token claims + OBO LLM token claims
+# Remove this endpoint before production deployment
+@app.get("/debug/token/llm")
+async def debug_token_llm(request: Request):
+    token = extract_bearer_token(request)
+
+    def decode_claims(t):
+        try:
+            return jose_jwt.decode(t, "", options={"verify_signature": False, "verify_aud": False, "verify_exp": False})
+        except Exception as e:
+            return {"error": str(e), "raw": t[:40]}
+
+    user_claims = decode_claims(token)
+
+    try:
+        llm_token = await exchange_obo_token_for_llm(token)
+        llm_claims = decode_claims(llm_token) if llm_token else None
+        llm_error = None
+    except RuntimeError as e:
+        llm_token = None
+        llm_claims = None
+        llm_error = str(e)
+
+    return {
+        "user_token": {
+            "aud": user_claims.get("aud"),
+            "scp": user_claims.get("scp"),
+            "sub": user_claims.get("sub"),
+            "iss": user_claims.get("iss"),
+        },
+        "llm_token": {
+            "aud": llm_claims.get("aud") if llm_claims else None,
+            "scp": llm_claims.get("scp") if llm_claims else None,
+            "sub": llm_claims.get("sub") if llm_claims else None,
+            "iss": llm_claims.get("iss") if llm_claims else None,
+        } if llm_claims else None,
+        "llm_error": llm_error,
     }
 
 

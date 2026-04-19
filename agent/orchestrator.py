@@ -10,11 +10,42 @@
 
 import json
 import logging
+import os
+from datetime import datetime, timezone
 from pathlib import Path
+import httpx
+from jose import jwt as jose_jwt
 from llm import call_llm_with_tools           # STEP 13 — LLM call
 from mcp_client import call_tool              # STEPS 5–12 — MCP/Okta tool call
 from tools import TOOLS, DESTRUCTIVE_TOOLS   # STEP 3 — tool catalogue
-from obo import exchange_obo_token            # STEP 4 — OBO token exchange
+from obo import exchange_obo_token, exchange_obo_token_for_llm  # STEP 4 — OBO token exchange
+
+
+def _claims(token: str) -> dict:
+    """Decode JWT claims without verification (debug only)."""
+    try:
+        return jose_jwt.decode(
+            token, "", options={"verify_signature": False, "verify_aud": False, "verify_exp": False}
+        )
+    except Exception:
+        return {}
+
+
+def _fmt(claims: dict) -> str:
+    return f"  aud : {claims.get('aud', '?')}\n  scp : {claims.get('scp', '?')}\n  sub : {claims.get('sub', '?')}"
+
+
+async def _fetch_okta_debug() -> dict:
+    """Fetch Okta token info from MCP server debug endpoint."""
+    mcp_url = os.getenv("MCP_SERVER_URL")
+    if not mcp_url:
+        return {"status": "MCP_SERVER_URL not set (mock mode)"}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(f"{mcp_url}/debug/okta-token")
+            return r.json() if r.is_success else {"status": f"HTTP {r.status_code}"}
+    except Exception as e:
+        return {"status": f"error: {e}"}
 
 _TOKEN_LOG = Path(__file__).parent / "token_debug.txt"
 
@@ -47,40 +78,55 @@ async def run(prompt: str, token: str) -> dict:
         {"role": "user", "content": prompt},
     ]
 
-    # DEBUG — write user token before OBO so it's always captured
-    _TOKEN_LOG.write_text(f"=== USER TOKEN (incoming) ===\n{token}\n\nOBO: pending...\n")
-
-    # STEP 4 — Exchange the user token for an OBO token scoped to the MCP Server.
-    # Falls back to the original token if OBO env vars are not configured (local dev).
+    # STEP 4 — Exchange the user token for OBO tokens (MCP + LLM).
     try:
         mcp_token = await exchange_obo_token(token)
+        llm_token = await exchange_obo_token_for_llm(token)
+
         _TOKEN_LOG.write_text(
-            f"=== USER TOKEN (incoming) ===\n{token}\n\n"
-            f"=== OBO TOKEN (after exchange) ===\n{mcp_token}\n\n"
-            f"=== SAME? ===\n{token == mcp_token}\n"
+            f"REQUEST FLOW — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
+            f"{'=' * 50}\n\n"
+            f"[1] USER → AGENT  (Bearer token received)\n"
+            f"{_fmt(_claims(token))}\n\n"
+            f"[2] OBO EXCHANGE → MCP SERVER\n"
+            f"{_fmt(_claims(mcp_token))}\n\n"
+            f"[3] OBO EXCHANGE → AZURE OPENAI (OBO for AI)\n"
+            f"{_fmt(_claims(llm_token)) if llm_token else '  auth: API key (OBO for AI not configured)'}\n\n"
+            f"[4] LLM CALL\n"
+            f"  auth : {'OBO for AI ✓' if llm_token else 'API key (fallback)'}\n\n"
+            f"[5] MCP SERVER → OKTA  (fetched after tool calls)\n"
+            f"  (pending...)\n\n"
+            f"{'=' * 50}\n"
         )
     except RuntimeError as e:
         _TOKEN_LOG.write_text(
-            f"=== USER TOKEN (incoming) ===\n{token}\n\n"
-            f"=== OBO ERROR ===\n{e}\n"
+            f"REQUEST FLOW — {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
+            f"{'=' * 50}\n\n"
+            f"[1] USER → AGENT\n"
+            f"{_fmt(_claims(token))}\n\n"
+            f"[!] OBO ERROR\n  {e}\n\n"
+            f"{'=' * 50}\n"
         )
         raise
-    logger.info("Tokens written to %s", _TOKEN_LOG)
+    logger.info("Token flow written to %s", _TOKEN_LOG)
 
     tools_called = []
+    final_result = None
 
     for round_num in range(MAX_TOOL_ROUNDS):
 
         # STEP 13 — Ask the LLM what to do next (answer or call a tool)
-        response = await call_llm_with_tools(messages, TOOLS)
+        # llm_token is the OBO token for Azure OpenAI (None = fall back to API key)
+        response = await call_llm_with_tools(messages, TOOLS, llm_token)
 
-        # STEP 13 — LLM gave a plain text answer; return it to the caller
+        # STEP 13 — LLM gave a plain text answer; done
         if response["type"] == "text":
-            return {
+            final_result = {
                 "reply": response["content"],
                 "tools_called": tools_called,
                 "model": response["model"],
             }
+            break
 
         # STEP 3 — LLM decided to call a tool; extract name and arguments
         tool_call = response["tool_call"]
@@ -95,15 +141,14 @@ async def run(prompt: str, token: str) -> dict:
             destructive_keywords = ["deactivate", "reset", "disable", "remove", "delete"]
             if not any(kw in prompt.lower() for kw in destructive_keywords):
                 logger.warning("Blocked destructive tool %s — no explicit intent in prompt", tool_name)
-                return {
+                final_result = {
                     "reply": f"I can perform '{tool_name}' but I need explicit confirmation. Please re-state your request clearly.",
                     "tools_called": tools_called,
                     "model": response["model"],
                 }
+                break
 
         # STEPS 5–12 — Execute the tool via the MCP client.
-        # STEP 4 — mcp_token is the OBO token (or original token in local dev mode).
-        # The MCP Server validates this token before executing the Okta operation.
         tool_result = await call_tool(tool_name, tool_args, mcp_token)
         tools_called.append({"tool": tool_name, "args": tool_args, "result": tool_result})
 
@@ -124,12 +169,32 @@ async def run(prompt: str, token: str) -> dict:
         messages.append({
             "role": "tool",
             "tool_call_id": tool_call["id"],
-            "content": json.dumps(tool_result),  # tool result fed back to LLM
+            "content": json.dumps(tool_result),
         })
 
-    # STEP 3 — Safety fallback: max rounds reached without a final text response
-    return {
-        "reply": "I was unable to complete the request within the allowed number of steps.",
-        "tools_called": tools_called,
-        "model": "unknown",
-    }
+    if final_result is None:
+        # STEP 3 — Safety fallback: max rounds reached without a final text response
+        final_result = {
+            "reply": "I was unable to complete the request within the allowed number of steps.",
+            "tools_called": tools_called,
+            "model": "unknown",
+        }
+
+    # Append Okta token info to the debug log now that tool calls are done
+    okta = await _fetch_okta_debug()
+    okta_section = (
+        f"  sub   : {okta.get('sub', '?')}\n"
+        f"  scope : {okta.get('scope', '?')}\n"
+        f"  aud   : {okta.get('aud', '?')}\n"
+        f"  expires_in: {okta.get('expires_in', '?')}s"
+        if "sub" in okta else f"  {okta.get('status', str(okta))}"
+    )
+    current = _TOKEN_LOG.read_text()
+    _TOKEN_LOG.write_text(
+        current.replace(
+            "[5] MCP SERVER → OKTA  (fetched after tool calls)\n  (pending...)",
+            f"[5] MCP SERVER → OKTA  (client_credentials / private_key_jwt)\n{okta_section}"
+        )
+    )
+
+    return final_result
